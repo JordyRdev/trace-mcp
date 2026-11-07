@@ -57,7 +57,15 @@ export function isAllowedRequest(
   return true;
 }
 
-export function startInspector(db: Db, port = 4747): Promise<string> {
+export interface Inspector {
+  url: string;
+  port: number;
+  close: () => Promise<void>;
+}
+
+/** Start the inspector on 127.0.0.1. Pass port 0 to pick a free port. */
+export function startInspector(db: Db, requestedPort = 4747): Promise<Inspector> {
+  let port = requestedPort;
   return new Promise((resolve, rejectPromise) => {
     const server = createServer(async (req, res) => {
       if (!isAllowedRequest(req, port)) {
@@ -108,8 +116,22 @@ export function startInspector(db: Db, port = 4747): Promise<string> {
       res.end(page(db, status, q));
     });
 
-    server.on("error", rejectPromise);
-    server.listen(port, "127.0.0.1", () => resolve(`http://127.0.0.1:${port}`));
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        rejectPromise(
+          new Error(`port ${requestedPort} is in use. is another trace inspect running? try --port <n>`)
+        );
+      } else rejectPromise(err);
+    });
+    server.listen(requestedPort, "127.0.0.1", () => {
+      const addr = server.address();
+      port = typeof addr === "object" && addr ? addr.port : requestedPort;
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        port,
+        close: () => new Promise<void>((done) => server.close(() => done())),
+      });
+    });
   });
 }
 
@@ -156,7 +178,9 @@ function page(db: Db, status: MemoryStatus | "all", q: string): string {
   const rows = items
     .map((m) => {
       const date = shortDate(m.validFrom ?? m.createdAt);
-      const quote = m.evidence ? `<div class="quote">${esc(m.evidence)}</div>` : "";
+      const quote = m.evidence.trim()
+        ? `<div class="quote">${esc(m.evidence)}</div>`
+        : `<div class="quote missing">no receipt: nothing quoted to back this up</div>`;
       return `<li class="row">
         <div class="text">${esc(m.text)}</div>
         <div class="meta"><code>${esc(m.id)}</code> · ${esc(m.kind)} · ${esc(m.status)} · ${date} · ${esc(m.source)}</div>
@@ -196,6 +220,7 @@ function page(db: Db, status: MemoryStatus | "all", q: string): string {
   .text { font-size: 15px; }
   .meta { font-size: 12px; opacity: 0.55; margin-top: 4px; }
   .quote { font-size: 13px; opacity: 0.75; border-left: 2px solid rgba(127,127,127,0.35); padding-left: 10px; margin-top: 8px; }
+  .quote.missing { font-style: italic; opacity: 0.6; border-left-style: dashed; }
   .actions { display: flex; gap: 6px; margin-top: 10px; }
   .actions form { margin: 0; }
   footer { margin-top: 40px; font-size: 12px; opacity: 0.5; }

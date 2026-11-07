@@ -133,6 +133,9 @@ export async function main(argv: string[]): Promise<void> {
         status: flags.active ? "active" : "pending",
       });
       out(`${m.status === "active" ? "saved" : "queued"} ${m.id}`);
+      if (!m.evidence.trim()) {
+        process.stderr.write("note: no --evidence given, so this memory has no receipt\n");
+      }
       return;
     }
 
@@ -262,7 +265,7 @@ export async function main(argv: string[]): Promise<void> {
 
     case "inspect": {
       const { startInspector } = await import("./web/server.js");
-      const url = await startInspector(db, Number(str(flags.port)) || 4747);
+      const { url } = await startInspector(db, Number(str(flags.port)) || 4747);
       out(`inspector at ${url}`);
       await new Promise(() => {});
       return;

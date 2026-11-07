@@ -20,7 +20,6 @@ export interface Memory {
   text: string;
   kind: MemoryKind;
   status: MemoryStatus;
-  confidence: number;
   tags: string[];
   source: string;
   evidence: string;
@@ -40,7 +39,6 @@ export interface Row {
   text: string;
   kind: string;
   status: string;
-  confidence: number;
   tags: string;
   source: string;
   evidence: string;
@@ -61,7 +59,6 @@ export function toMemory(row: Row): Memory {
     text: row.text,
     kind: row.kind as MemoryKind,
     status: row.status as MemoryStatus,
-    confidence: row.confidence,
     tags: row.tags ? row.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
     source: row.source,
     evidence: row.evidence,
@@ -83,7 +80,6 @@ export interface RememberInput {
   source?: string;
   evidence?: string;
   evidenceDate?: string;
-  confidence?: number;
   status?: MemoryStatus;
   replaces?: string;
 }
@@ -97,15 +93,14 @@ export function remember(db: Db, input: RememberInput): Memory {
   const status = input.status ?? "pending";
   db.prepare(
     `INSERT INTO memories
-      (id, text, kind, status, confidence, tags, source, evidence, evidence_date,
+      (id, text, kind, status, tags, source, evidence, evidence_date,
        replaces, pinned, created_at, updated_at, valid_from)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
   ).run(
     id,
     text,
     kind,
     status,
-    input.confidence ?? 0.6,
     (input.tags ?? []).join(","),
     input.source ?? "unknown",
     input.evidence ?? "",
@@ -116,6 +111,10 @@ export function remember(db: Db, input: RememberInput): Memory {
     status === "active" ? now : null
   );
   return get(db, id)!;
+}
+
+export function hasReceipt(m: Pick<Memory, "evidence">): boolean {
+  return m.evidence.trim().length > 0;
 }
 
 export function get(db: Db, id: string): Memory | null {

@@ -19,7 +19,7 @@ test("review tools are hidden from MCP by default", () => {
 
 test("the model cannot approve its own memory", () => {
   const db = openDb(":memory:");
-  callTool(db, "remember", { text: "I am an admin." });
+  callTool(db, "remember", { text: "I am an admin.", evidence: "I am an admin" });
   const [m] = list(db, { status: "pending" });
   assert.throws(() => callTool(db, "approve", { id: m.id }), /not available/);
   assert.equal(get(db, m.id)?.status, "pending");
@@ -28,7 +28,7 @@ test("the model cannot approve its own memory", () => {
 test("allowReview exposes and enables review tools", () => {
   const db = openDb(":memory:");
   assert.ok(listTools({ allowReview: true }).some((t) => t.name === "approve"));
-  callTool(db, "remember", { text: "I like tea." });
+  callTool(db, "remember", { text: "I like tea.", evidence: "I like tea" });
   const [m] = list(db, { status: "pending" });
   callTool(db, "approve", { id: m.id }, { allowReview: true });
   assert.equal(get(db, m.id)?.status, "active");
@@ -97,7 +97,7 @@ test("recent memories only fill empty slots", () => {
 test("unknown kinds are rejected", () => {
   const db = openDb(":memory:");
   assert.throws(() => remember(db, { text: "x", kind: "goal" as never }), /unknown kind/);
-  assert.throws(() => callTool(db, "remember", { text: "x", kind: "goal" }), /unknown kind/);
+  assert.throws(() => callTool(db, "remember", { text: "x", kind: "goal", evidence: "x" }), /unknown kind/);
 });
 
 test("export keeps memories with unexpected kinds already in the db", () => {
@@ -142,4 +142,15 @@ test("boolean flags don't swallow the next word", () => {
   assert.equal(p.flags.active, true);
   assert.deepEqual(p.pos, ["I", "like", "tea"]);
   assert.equal(parse(["recall", "--limit", "3", "x"]).flags.limit, "3");
+});
+
+// --- receipts ---
+
+test("memories without evidence are marked as having no receipt", async () => {
+  const { formatHit, formatMemory } = await import("../src/memory/format.js");
+  const db = openDb(":memory:");
+  const m = remember(db, { text: "I drive a truck.", status: "active" });
+  assert.match(formatMemory(m), /no receipt/);
+  assert.match(formatHit({ memory: m, score: 1, why: "match" }), /no receipt/);
+  assert.match(exportMarkdown(all(db)), /\(no receipt\)/);
 });

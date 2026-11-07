@@ -22,7 +22,8 @@ export function exportMarkdown(memories: Memory[]): string {
       const date = shortDate(m.validFrom ?? m.createdAt);
       const source = m.source ? `, via ${m.source}` : "";
       lines.push(`- ${m.text} (${date}${source})`);
-      if (m.evidence) lines.push(`  > ${m.evidence}`);
+      if (m.evidence.trim()) lines.push(`  > ${m.evidence}`);
+      else lines.push("  > (no receipt)");
     }
     lines.push("");
   }

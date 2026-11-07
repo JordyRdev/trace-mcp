@@ -46,6 +46,12 @@ echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc && exec bash
 
 trace runs as an MCP server over stdio with `trace serve`.
 
+**Claude Code**: available in every folder:
+
+```bash
+claude mcp add --scope user trace -- trace serve
+```
+
 **Claude Desktop**: add this to `claude_desktop_config.json`:
 
 ```json
@@ -71,6 +77,24 @@ By default the MCP server only exposes tools that **propose** or **read**:
 Approving, rejecting, forgetting, pinning and exporting happen in the CLI or the inspector, where you're the one deciding. That's the point: a model, or text it read on a web page, can't slip a memory into your active set.
 
 If you really want clients to review too, start the server with `trace serve --allow-review` (or set `TRACE_MCP_ALLOW_REVIEW=1`).
+
+**Agents with a shell.** Tools like Claude Code can also run terminal commands, so a model could call `trace approve` directly. Block that in the agent's own permissions. For Claude Code, in `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": ["Bash(trace approve:*)", "Bash(trace pin:*)", "Bash(trace forget:*)", "Bash(trace export:*)"]
+  }
+}
+```
+
+Commands you type yourself (`! trace approve <id>` in Claude Code) still work.
+
+## Receipts
+
+Over MCP, `remember` and `replace` require `evidence`: the person's own words, quoted. A model can't store a memory it can't back up.
+
+From the CLI, `--evidence` is optional, but a memory without one is marked **no receipt** in recall, the inspector and exports, so you can tell facts from rumors.
 
 ## Review queue
 

@@ -43,10 +43,13 @@ const PROPOSE_TOOLS = [
         kind: { type: "string", enum: [...KINDS] },
         tags: { type: "array", items: { type: "string" } },
         source: { type: "string" },
-        evidence: { type: "string", description: "Short quote that supports this memory." },
-        evidence_date: { type: "string" },
+        evidence: {
+          type: "string",
+          description: "Required. The person's own words that support this memory, quoted exactly.",
+        },
+        evidence_date: { type: "string", description: "When the quote was said or written (ISO date)." },
       },
-      required: ["text"],
+      required: ["text", "evidence"],
     },
   },
   {
@@ -75,10 +78,13 @@ const PROPOSE_TOOLS = [
       properties: {
         id: { type: "string" },
         text: { type: "string" },
-        evidence: { type: "string" },
+        evidence: {
+          type: "string",
+          description: "Required. The person's own words showing what changed, quoted exactly.",
+        },
         evidence_date: { type: "string" },
       },
-      required: ["id", "text"],
+      required: ["id", "text", "evidence"],
     },
   },
   {
@@ -132,6 +138,13 @@ export function listTools(opts: ToolOptions = {}) {
 const opt = (v: unknown): string | undefined =>
   v === undefined || v === null || v === "" ? undefined : String(v);
 
+/** A memory without a quote is a rumor, so the model must always bring one. */
+function requireEvidence(v: unknown): string {
+  const e = opt(v)?.trim();
+  if (!e) throw new Error("evidence is required: quote the person's own words that support this memory");
+  return e;
+}
+
 export function callTool(
   db: Db,
   name: string,
@@ -150,7 +163,7 @@ export function callTool(
         kind: parseKind(args.kind),
         tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
         source: opt(args.source) ?? "mcp",
-        evidence: opt(args.evidence) ?? "",
+        evidence: requireEvidence(args.evidence),
         evidenceDate: opt(args.evidence_date),
       });
       return `Queued ${m.id}. Status: pending. The person can approve it with \`trace approve ${m.id}\` or in the inspector.`;
@@ -169,7 +182,7 @@ export function callTool(
       const m = replace(db, String(args.id ?? ""), {
         text: String(args.text ?? ""),
         source: "mcp",
-        evidence: opt(args.evidence) ?? "",
+        evidence: requireEvidence(args.evidence),
         evidenceDate: opt(args.evidence_date),
       });
       return `Queued replacement ${m.id}. The old memory is retired once the person approves it.`;

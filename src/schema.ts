@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS memories (
   text TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'fact',
   status TEXT NOT NULL DEFAULT 'pending',
-  confidence REAL NOT NULL DEFAULT 0.6,
+  confidence REAL NOT NULL DEFAULT 0.6, -- unused; kept so older databases still open
   tags TEXT NOT NULL DEFAULT '',
   source TEXT NOT NULL DEFAULT 'unknown',
   evidence TEXT NOT NULL DEFAULT '',

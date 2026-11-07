@@ -5,7 +5,7 @@ import { shortDate } from "../util/time.js";
 export function receipt(m: Memory): string {
   const bits: string[] = [];
   if (m.source) bits.push(m.source);
-  if (m.evidence) bits.push(`"${m.evidence}"`);
+  bits.push(m.evidence.trim() ? `"${m.evidence}"` : "no receipt");
   return bits.join("; ");
 }
 
@@ -17,5 +17,6 @@ export function formatHit(h: Hit): string {
 
 export function formatMemory(m: Memory): string {
   const date = shortDate(m.validFrom ?? m.createdAt);
-  return `- ${m.text} (${m.id}, ${m.kind}, ${m.status}, ${date})`;
+  const flag = m.evidence.trim() ? "" : ", no receipt";
+  return `- ${m.text} (${m.id}, ${m.kind}, ${m.status}, ${date}${flag})`;
 }

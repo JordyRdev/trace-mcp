@@ -10,8 +10,13 @@ import {
   remember,
   replace,
   stats,
-  type MemoryKind,
+  parseKind,
+  type MemoryStatus,
 } from "./memory/store.js";
+
+/** Flags that never take a value, so `--active I like tea` keeps "I" in the text. */
+const BOOLEAN_FLAGS = new Set(["active", "json", "off", "help", "allow-review"]);
+const STATUSES: (MemoryStatus | "all")[] = ["pending", "active", "rejected", "superseded", "forgotten", "all"];
 
 const HELP = `trace ${VERSION} - a memory layer for AI tools
 
@@ -30,7 +35,7 @@ Commands:
   pin <id> [--off]         Pin or unpin a memory
   replace <id> <text>      Propose a replacement for a memory
   export                   Export everything (--format md|jsonl)
-  serve                    Run the MCP server on stdio
+  serve                    Run the MCP server on stdio (--allow-review)
   inspect                  Start the local inspector
   stats                    Counts by status
   doctor                   Check the database
@@ -39,6 +44,7 @@ Options:
   --db <path>              Database file (default ~/.trace/trace.db)
   --json                   Machine readable output
   --evidence <quote>       Supporting quote for a memory
+  --evidence-date <date>   When the quote was said or written
   --source <name>          Where the memory came from
   --kind <kind>            identity | fact | preference | event
   --tags <a,b>             Comma separated tags
@@ -46,9 +52,12 @@ Options:
   --limit <n>              Max results
   --format <md|jsonl>      Export format
   --port <n>               Inspector port
+  --allow-review           Let MCP clients approve, reject, forget, pin and export.
+                           Off by default: the model proposes, you approve.
 
 Environment:
   TRACE_DB                 Same as --db
+  TRACE_MCP_ALLOW_REVIEW=1 Same as serve --allow-review
 `;
 
 export interface Parsed {
@@ -72,7 +81,7 @@ export function parse(argv: string[]): Parsed {
       }
       const key = a.slice(2);
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
+      if (!BOOLEAN_FLAGS.has(key) && next !== undefined && !next.startsWith("--")) {
         flags[key] = next;
         i += 2;
       } else {
@@ -116,7 +125,7 @@ export async function main(argv: string[]): Promise<void> {
       if (!text) throw new Error("say what you want to remember");
       const m = remember(db, {
         text,
-        kind: (str(flags.kind) as MemoryKind) ?? "fact",
+        kind: parseKind(str(flags.kind)),
         tags: str(flags.tags)?.split(",").map((s) => s.trim()).filter(Boolean),
         source: str(flags.source) ?? "cli",
         evidence: str(flags.evidence) ?? "",
@@ -161,9 +170,11 @@ export async function main(argv: string[]): Promise<void> {
     }
 
     case "list": {
+      const status = (str(flags.status) ?? "all") as MemoryStatus | "all";
+      if (!STATUSES.includes(status)) throw new Error(`unknown status "${status}". use one of: ${STATUSES.join(", ")}`);
       const items = list(db, {
-        status: (str(flags.status) as never) ?? "all",
-        kind: str(flags.kind) as MemoryKind | undefined,
+        status,
+        kind: parseKind(str(flags.kind)),
         q: str(flags.q),
         limit: Number(str(flags.limit)) || 200,
       });
@@ -204,6 +215,7 @@ export async function main(argv: string[]): Promise<void> {
         text,
         source: str(flags.source) ?? "cli",
         evidence: str(flags.evidence) ?? "",
+        evidenceDate: str(flags["evidence-date"]),
       });
       out(`queued replacement ${m.id} for ${oldId}`);
       return;
@@ -240,7 +252,11 @@ export async function main(argv: string[]): Promise<void> {
 
     case "serve": {
       const { runMcpServer } = await import("./mcp/server.js");
-      runMcpServer(db);
+      const allowReview = Boolean(flags["allow-review"]) || process.env.TRACE_MCP_ALLOW_REVIEW === "1";
+      if (allowReview) {
+        process.stderr.write("trace: review tools are exposed over MCP. the model can approve its own memories.\n");
+      }
+      runMcpServer(db, { allowReview });
       return;
     }
 

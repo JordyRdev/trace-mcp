@@ -16,9 +16,54 @@ import { shortDate } from "../util/time.js";
 
 const TABS: (MemoryStatus | "all")[] = ["active", "pending", "superseded", "forgotten", "all"];
 
+/**
+ * The inspector binds to 127.0.0.1, but that alone does not stop a web page in
+ * your browser from talking to it. Two checks close that gap:
+ *  - Host must be our own loopback address, which defeats DNS rebinding
+ *    (a hostile domain re-pointed at 127.0.0.1 still sends its own Host).
+ *  - Requests that change state must come from our own Origin, which defeats
+ *    cross-site form posts (CSRF).
+ */
+export function allowedHosts(port: number): Set<string> {
+  return new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
+}
+
+export function isAllowedRequest(
+  req: Pick<IncomingMessage, "method" | "headers">,
+  port: number
+): boolean {
+  const hosts = allowedHosts(port);
+  const host = (req.headers.host ?? "").toLowerCase();
+  if (!hosts.has(host)) return false;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    const origin = req.headers.origin;
+    const site = req.headers["sec-fetch-site"];
+    if (origin !== undefined) {
+      let originHost = "";
+      try {
+        originHost = new URL(String(origin)).host.toLowerCase();
+      } catch {
+        return false;
+      }
+      if (!hosts.has(originHost)) return false;
+    } else if (site !== undefined && site !== "same-origin" && site !== "none") {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function startInspector(db: Db, port = 4747): Promise<string> {
   return new Promise((resolve, rejectPromise) => {
     const server = createServer(async (req, res) => {
+      if (!isAllowedRequest(req, port)) {
+        res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("forbidden");
+        return;
+      }
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'");
+      res.setHeader("Referrer-Policy", "no-referrer");
       const url = new URL(req.url ?? "/", "http://localhost");
 
       if (req.method === "POST" && url.pathname === "/action") {
@@ -34,7 +79,8 @@ export function startInspector(db: Db, port = 4747): Promise<string> {
         } catch {
           // keep the page usable
         }
-        res.writeHead(303, { Location: form.get("back") || "/" });
+        const back = form.get("back") ?? "/";
+        res.writeHead(303, { Location: back.startsWith("/") && !back.startsWith("//") ? back : "/" });
         res.end();
         return;
       }
@@ -108,7 +154,7 @@ function page(db: Db, status: MemoryStatus | "all", q: string): string {
       const quote = m.evidence ? `<div class="quote">${esc(m.evidence)}</div>` : "";
       return `<li class="row">
         <div class="text">${esc(m.text)}</div>
-        <div class="meta"><code>${m.id}</code> · ${m.kind} · ${m.status} · ${date} · ${esc(m.source)}</div>
+        <div class="meta"><code>${esc(m.id)}</code> · ${esc(m.kind)} · ${esc(m.status)} · ${date} · ${esc(m.source)}</div>
         ${quote}
         ${actions(m, back)}
       </li>`;
@@ -157,7 +203,7 @@ function page(db: Db, status: MemoryStatus | "all", q: string): string {
 </header>
 <nav>${tabs}</nav>
 <form class="search" method="get">
-  <input type="hidden" name="status" value="${status}">
+  <input type="hidden" name="status" value="${esc(status)}">
   <input name="q" value="${esc(q)}" placeholder="search text, tags, evidence">
   <button type="submit">search</button>
 </form>

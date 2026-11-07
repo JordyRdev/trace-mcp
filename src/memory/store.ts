@@ -2,7 +2,16 @@ import type { Db } from "../db.js";
 import { newId } from "../util/id.js";
 import { nowIso } from "../util/time.js";
 
-export type MemoryKind = "identity" | "fact" | "preference" | "event";
+export const KINDS = ["identity", "fact", "preference", "event"] as const;
+export type MemoryKind = (typeof KINDS)[number];
+
+/** Validate a kind from user or model input. Undefined means "use the default". */
+export function parseKind(v: unknown): MemoryKind | undefined {
+  if (v === undefined || v === null || v === "") return undefined;
+  const k = String(v).toLowerCase();
+  if ((KINDS as readonly string[]).includes(k)) return k as MemoryKind;
+  throw new Error(`unknown kind "${v}". use one of: ${KINDS.join(", ")}`);
+}
 export type MemoryStatus = "pending" | "active" | "rejected" | "superseded" | "forgotten";
 
 export interface Memory {
@@ -82,6 +91,7 @@ export interface RememberInput {
 export function remember(db: Db, input: RememberInput): Memory {
   const text = input.text.trim();
   if (!text) throw new Error("memory text is required");
+  const kind = parseKind(input.kind) ?? "fact";
   const now = nowIso();
   const id = newId();
   const status = input.status ?? "pending";
@@ -93,7 +103,7 @@ export function remember(db: Db, input: RememberInput): Memory {
   ).run(
     id,
     text,
-    input.kind ?? "fact",
+    kind,
     status,
     input.confidence ?? 0.6,
     (input.tags ?? []).join(","),
@@ -118,20 +128,30 @@ export function approve(db: Db, id: string): Memory {
   if (!m) throw new Error(`no memory ${id}`);
   if (m.status === "active") return m;
   if (m.status !== "pending") throw new Error(`cannot approve a ${m.status} memory`);
-  const now = nowIso();
-  if (m.replaces) {
-    const old = get(db, m.replaces);
-    if (old && old.status === "active") {
-      db.prepare(
-        `UPDATE memories
-            SET status = 'superseded', valid_to = ?, updated_at = ?, superseded_by = ?
-          WHERE id = ?`
-      ).run(now, now, m.id, old.id);
+
+  const run = db.transaction(() => {
+    const now = nowIso();
+    if (m.replaces) {
+      const old = get(db, m.replaces);
+      if (old && old.status !== "active" && old.status !== "pending") {
+        throw new Error(
+          `${m.id} replaces ${old.id}, which is already ${old.status}. reject this one or propose a new memory.`
+        );
+      }
+      if (old) {
+        // A pending original is retired too, so the two can never both end up active.
+        db.prepare(
+          `UPDATE memories
+              SET status = 'superseded', valid_to = ?, updated_at = ?, superseded_by = ?
+            WHERE id = ?`
+        ).run(now, now, m.id, old.id);
+      }
     }
-  }
-  db.prepare(
-    "UPDATE memories SET status = 'active', valid_from = ?, updated_at = ? WHERE id = ?"
-  ).run(now, now, id);
+    db.prepare(
+      "UPDATE memories SET status = 'active', valid_from = ?, updated_at = ? WHERE id = ?"
+    ).run(now, now, id);
+  });
+  run();
   return get(db, id)!;
 }
 
@@ -146,6 +166,8 @@ export function reject(db: Db, id: string): Memory {
 export function forget(db: Db, id: string): Memory {
   const m = get(db, id);
   if (!m) throw new Error(`no memory ${id}`);
+  if (m.status === "forgotten") return m;
+  if (m.status !== "active") throw new Error(`cannot forget a ${m.status} memory. use reject for pending ones`);
   const now = nowIso();
   db.prepare(
     "UPDATE memories SET status = 'forgotten', valid_to = ?, updated_at = ? WHERE id = ?"
@@ -189,8 +211,8 @@ export function list(db: Db, opts: ListOptions = {}): Memory[] {
     params.push(opts.kind);
   }
   if (opts.q) {
-    where.push("(text LIKE ? OR tags LIKE ? OR evidence LIKE ?)");
-    const like = `%${opts.q}%`;
+    where.push("(text LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\' OR evidence LIKE ? ESCAPE '\\')");
+    const like = `%${opts.q.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
     params.push(like, like, like);
   }
   const sql = `SELECT * FROM memories ${where.length ? "WHERE " + where.join(" AND ") : ""}

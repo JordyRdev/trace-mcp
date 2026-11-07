@@ -1,11 +1,11 @@
 import { createInterface } from "node:readline";
 import type { Db } from "../db.js";
 import { VERSION } from "../config.js";
-import { TOOLS, callTool } from "./tools.js";
+import { callTool, listTools, type ToolOptions } from "./tools.js";
 
 const SUPPORTED = ["2024-11-05", "2025-03-26", "2025-06-18"];
 
-export function runMcpServer(db: Db): void {
+export function runMcpServer(db: Db, opts: ToolOptions = {}): void {
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
   const send = (msg: unknown) => {
@@ -27,6 +27,7 @@ export function runMcpServer(db: Db): void {
     try {
       msg = JSON.parse(trimmed);
     } catch {
+      send({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } });
       return;
     }
 
@@ -52,13 +53,13 @@ export function runMcpServer(db: Db): void {
           reply(msg.id, {});
           return;
         case "tools/list":
-          reply(msg.id, { tools: TOOLS });
+          reply(msg.id, { tools: listTools(opts) });
           return;
         case "tools/call": {
           const name = String(msg.params?.name ?? "");
           const args = (msg.params?.arguments ?? {}) as Record<string, unknown>;
           try {
-            const text = callTool(db, name, args);
+            const text = callTool(db, name, args, opts);
             reply(msg.id, { content: [{ type: "text", text }] });
           } catch (err) {
             reply(msg.id, {

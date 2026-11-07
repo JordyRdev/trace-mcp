@@ -12,14 +12,96 @@ I built this because I got tired of being a stranger to my own AI. Every time I 
 
 ## How it works
 
-An MCP client (like Cursor or Claude Desktop) calls `remember` with a sentence and a supporting quote. The memory lands in a pending queue. You approve it in the CLI, in the local inspector, or directly from the client. 
+An MCP client (like Cursor or Claude Desktop) calls `remember` with a sentence and a supporting quote. The memory lands in a pending queue. You approve it in the CLI or in the local inspector. The model can't approve its own memories (see [Review stays with you](#review-stays-with-you)). 
 
-Recall searches active memories using SQLite FTS5, always includes pinned identity facts, and appends the most recent ones. 
+Recall searches active memories using SQLite FTS5, includes your pinned memories, and fills any empty slots with the most recent ones.
 
 When something changes, you call `replace`. The new memory is queued as pending. On approval, the old row is marked `superseded`, gets an end date, and links to its replacement. Nothing is deleted, so you can see what used to be true and when it stopped being true.
 
 ## Install
 
+Requires Node 20 or newer.
+
 ```bash
-npm install -g trace-mcp
+npm install -g trace-memory-mcp
 trace init
+```
+
+This creates `~/.trace/trace.db`. Use `--db <path>` or `TRACE_DB` to put it somewhere else.
+
+## Connect a client
+
+trace runs as an MCP server over stdio with `trace serve`.
+
+**Claude Desktop**: add this to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "trace": {
+      "command": "trace",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+**Cursor**: add the same block to `~/.cursor/mcp.json`, or to `.cursor/mcp.json` in a project.
+
+If the client can't find `trace` on its `PATH`, use `"command": "npx", "args": ["-y", "trace-memory-mcp", "serve"]`.
+
+## Review stays with you
+
+By default the MCP server only exposes tools that **propose** or **read**:
+`remember`, `replace`, `recall`, `pending` and `stats`.
+
+Approving, rejecting, forgetting, pinning and exporting happen in the CLI or the inspector, where you're the one deciding. That's the point: a model, or text it read on a web page, can't slip a memory into your active set.
+
+If you really want clients to review too, start the server with `trace serve --allow-review` (or set `TRACE_MCP_ALLOW_REVIEW=1`).
+
+## Review queue
+
+```bash
+trace pending                 # what's waiting
+trace approve m_abc123        # make it active
+trace reject m_abc123         # drop it
+trace inspect                 # local web UI at http://127.0.0.1:4747
+```
+
+The inspector only listens on `127.0.0.1` and only accepts requests addressed to `127.0.0.1` or `localhost` from its own pages, so other websites open in your browser can't read or change your memories.
+
+## CLI
+
+```bash
+trace remember "I prefer tabs over spaces" --kind preference --evidence "tabs, always" --source chat
+trace recall "editor setup"
+trace replace m_abc123 "I moved to Amsterdam" --evidence "we moved last week"
+trace pin m_abc123
+trace forget m_abc123
+trace list --status superseded
+trace export --format md > memories.md
+trace doctor
+```
+
+Kinds: `identity`, `fact`, `preference`, `event`. Run `trace help` for every option.
+
+## Recall
+
+`recall` returns up to `--limit` memories (default 8):
+
+1. pinned memories, capped at half the slots when there are search matches
+2. full-text matches (SQLite FTS5, porter stemming, Unicode-aware)
+3. the rest of the pinned memories
+4. the most recent memories, only to fill empty slots
+
+## Development
+
+```bash
+npm install
+npm test
+npm run build
+```
+
+## License
+
+MIT

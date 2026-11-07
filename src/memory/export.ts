@@ -1,7 +1,7 @@
 import type { Memory } from "./store.js";
 import { shortDate } from "../util/time.js";
 
-const KINDS: Memory["kind"][] = ["identity", "preference", "fact", "event"];
+const ORDER: string[] = ["identity", "preference", "fact", "event"];
 
 export function exportJsonl(memories: Memory[]): string {
   return memories.map((m) => JSON.stringify(m)).join("\n") + "\n";
@@ -12,7 +12,9 @@ export function exportMarkdown(memories: Memory[]): string {
   const pending = memories.filter((m) => m.status === "pending");
   const lines: string[] = ["# Memory export", "", `Generated ${new Date().toISOString()}`, ""];
 
-  for (const kind of KINDS) {
+  // Known kinds first, then anything else already in the database, so nothing is dropped.
+  const extra = [...new Set(active.map((m) => m.kind as string))].filter((k) => !ORDER.includes(k));
+  for (const kind of [...ORDER, ...extra.sort()]) {
     const group = active.filter((m) => m.kind === kind);
     if (!group.length) continue;
     lines.push(`## ${kind[0].toUpperCase()}${kind.slice(1)}`, "");

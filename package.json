@@ -1,6 +1,6 @@
 {
   "name": "trace-memory-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A memory layer for AI tools. One SQLite file, evidence receipts, a review queue, exportable.",
   "repository": {
     "type": "git",

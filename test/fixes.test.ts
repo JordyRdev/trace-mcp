@@ -43,6 +43,15 @@ test("inspector accepts its own requests", () => {
   assert.ok(isAllowedRequest(req("POST", { host: "localhost:4747", origin: "http://localhost:4747" }), 4747));
 });
 
+test("inspector accepts a null Origin when the browser marks it same-origin", () => {
+  assert.ok(
+    isAllowedRequest(req("POST", { host: "127.0.0.1:4747", origin: "null", "sec-fetch-site": "same-origin" }), 4747)
+  );
+  assert.ok(
+    !isAllowedRequest(req("POST", { host: "127.0.0.1:4747", origin: "null", "sec-fetch-site": "cross-site" }), 4747)
+  );
+});
+
 test("inspector rejects DNS-rebinding hosts", () => {
   assert.ok(!isAllowedRequest(req("GET", { host: "evil.example:4747" }), 4747));
   assert.ok(!isAllowedRequest(req("GET", {}), 4747));

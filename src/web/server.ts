@@ -38,7 +38,11 @@ export function isAllowedRequest(
   if (req.method !== "GET" && req.method !== "HEAD") {
     const origin = req.headers.origin;
     const site = req.headers["sec-fetch-site"];
-    if (origin !== undefined) {
+    if (origin === "null") {
+      // Some browsers send a null Origin for same-origin posts (privacy settings,
+      // referrer policies). Sec-Fetch-Site can't be forged by a web page, so trust it.
+      if (site !== "same-origin") return false;
+    } else if (origin !== undefined) {
       let originHost = "";
       try {
         originHost = new URL(String(origin)).host.toLowerCase();
@@ -63,7 +67,8 @@ export function startInspector(db: Db, port = 4747): Promise<string> {
       }
       res.setHeader("X-Frame-Options", "DENY");
       res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'");
-      res.setHeader("Referrer-Policy", "no-referrer");
+      // not "no-referrer": that makes browsers send `Origin: null` on our own form posts
+      res.setHeader("Referrer-Policy", "same-origin");
       const url = new URL(req.url ?? "/", "http://localhost");
 
       if (req.method === "POST" && url.pathname === "/action") {

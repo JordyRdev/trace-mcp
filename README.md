@@ -27,7 +27,20 @@ npm install -g trace-memory-mcp
 trace init
 ```
 
-This creates `~/.trace/trace.db`. Use `--db <path>` or `TRACE_DB` to put it somewhere else.
+If npm warns that `better-sqlite3` has install scripts that weren't run (npm 11 and newer), install with:
+
+```bash
+npm install -g --allow-scripts=better-sqlite3 trace-memory-mcp
+```
+
+Getting `EACCES: permission denied`? Don't use `sudo`. Point npm at a folder you own instead:
+
+```bash
+npm config set prefix ~/.npm-global --location=user
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc && exec bash
+```
+
+`trace init` creates `~/.trace/trace.db`. Use `--db <path>` or `TRACE_DB` to put it somewhere else.
 
 ## Connect a client
 
